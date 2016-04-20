@@ -62,15 +62,24 @@ docker run --rm  --net mynetwork -v /Users/alex/Work/pyprogs/hapostgres/postgres
     docker run -it --rm  --net mynetwork -p 22 -p 5432 --name=node1 pgmine:test2
 
 2. Run kickoff.sh in order to create the db stuff we need
-3. exec onto the node
+    3. exec onto the node
 
-    docker exec -it node1 /bin/bash
+        docker exec -it node1 /bin/bash
 
-3. Attempt to run:
+    3. Attempt to run:
 
-    repmgr -f repmgr.conf master register
+        gosu postgres repmgr -f /etc/repmgr/repmgr.conf master register
 
-ERROR:  could not access file "$libdir/repmgr_funcs": No such file or directory
+        ERROR:  could not access file "$libdir/repmgr_funcs": No such file or directory
+        - fixed by hack to make things use pg9.5 (since that's where repmgr had installed itself)
 
-(once we get to running secondaries we'll need to pass env vars into docker line
- with node names so that the repmgr template can be rendered appropriately)
+4. Run the second node without postgres:
+
+    docker run -it --rm  --net mynetwork -p 22 -p 5432 -e NODE_NAME=node2 -e NODE_ID=2 --name=node2 pgmine:test2 /bin/bash
+
+5. Start the backup
+
+    gosu postgres repmgr -h node1 -U repmgr -d repmgr -D $PGDATA -f /etc/repmgr/repmgr.conf standby clone
+
+6. Unchartered:
+ - need to start the db on the slave, and continue with the tutorial.

@@ -48,4 +48,9 @@ ADD postgres-config/pg_hba.conf /tmp/pg_hba.conf
 ADD postgres-config/postgresql.conf /tmp/postgresql.conf
 ADD postgres-config/postgresql.replication.conf /tmp/postgresql.replication.conf
 
+# Hack to force use of 9.5 which I luckily have for some reason.
+ENV PATH=/usr/lib/postgresql/9.5/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ENV PG_MAJOR=9.5
+ENV PGDATA=/data
+
 CMD ["/usr/bin/supervisord"]

@@ -30,7 +30,11 @@ initalise_repmgr_in_db() {
     export PGPORT=$(docker inspect node1 | grep Ports -A 20 | grep "5432/tcp" -A 3 | grep Port | tr -d '"' | awk '{print $NF}')
     createuser -s repmgr
     createdb repmgr -O repmgr
-    psql -c 'ALTER USER repmgr SET search_path TO repmgr_test, "$user", public;'
+    psql -c 'ALTER USER repmgr SET search_path TO repmgr_test_cluster, "$user", public;'
+    docker exec -it node1 /bin/bash -c "gosu postgres repmgr -f /etc/repmgr/repmgr.conf master register"
+    docker exec -it node2 /bin/bash -c "gosu postgres repmgr -h node1 -U repmgr -d repmgr -D $PGDATA -f /etc/repmgr/repmgr.conf standby clone"
+    docker exec node2 /bin/bash -c "/usr/bin/supervisord"
+    docker exec -it node2 /bin/bashrepmgr -f /etc/repmgr.conf standby register
 }
 
 # make_nodes_trust_each_other
