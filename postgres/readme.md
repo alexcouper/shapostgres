@@ -62,16 +62,17 @@ docker run --rm  --net mynetwork -v /Users/alex/Work/pyprogs/hapostgres/postgres
     docker run -it --rm  --net mynetwork -p 22 -p 5432 --name=node1 pgmine:test2
 
 2. Run kickoff.sh in order to create the db stuff we need
-    3. exec onto the node
 
-        docker exec -it node1 /bin/bash
+3. exec onto the node
 
-    3. Attempt to run:
+    docker exec -it node1 /bin/bash
 
-        gosu postgres repmgr -f /etc/repmgr/repmgr.conf master register
+3. Attempt to run:
 
-        ERROR:  could not access file "$libdir/repmgr_funcs": No such file or directory
-        - fixed by hack to make things use pg9.5 (since that's where repmgr had installed itself)
+    gosu postgres repmgr -f /etc/repmgr/repmgr.conf master register
+
+    ERROR:  could not access file "$libdir/repmgr_funcs": No such file or directory
+    - fixed by hack to make things use pg9.5 (since that's where repmgr had installed itself)
 
 4. Run the second node without postgres:
 
@@ -83,3 +84,64 @@ docker run --rm  --net mynetwork -v /Users/alex/Work/pyprogs/hapostgres/postgres
 
 6. Unchartered:
  - need to start the db on the slave, and continue with the tutorial.
+
+
+docker run -it --rm  --net mynetwork -p 22 -p 5432 --name=node1 pgmine:test2
+docker run -it --rm  --net mynetwork -p 22 -p 5432 -e NODE_NAME=node2 -e NODE_ID=2 --name=node2 pgmine:test2 /bin/bash
+docker run -it --rm  --net mynetwork -p 22 -p 5432 -e NODE_NAME=node3 -e NODE_ID=3 --name=node3 pgmine:test2 /bin/bash
+./kickoff.sh
+
+You can now create tables in node1 and see them reflect in node2 and 3!
+Note that you can't create nodes in node 2 as it's read only.
+
+Now kill off node 1 and after a minute one of the other 2 will be elected.
+
+
+Considerations for K8s
+
+I want to upgrade the cluster with ~0 db downtime.
+
+Service: master db
+API-DB
+MASTER
+
+DEPLOYMENT
+api-db
+
+Other services: standby (load balanced)
+
+master goes down.
+
+New pod is created that should just be a standby trying to join master (which will fail for a while!)
+
+Standby elected
+
+repmgrd_failover_promote fired, setting the standby label to be master
+
+
+
+
+Easy HA Postgres on K8s
+
+I can use repmgr to easily provide standby/replication of a pg master.
+I'm wanting to deal with the case where I upgrade the cluster or resize and
+just want everything to work(TM)
+
+I'm thinking of:
+ - 2 services: 1 to `role: master; app: db`, 1 to `role: standby; app: db`
+ - 3 deployments:
+     - Each with a single pod running postgres and repmgr
+     - Each with `app: db; id:<unique_id>`
+     - I believe I require 3 different due to persistent disk read/write issues
+ - In the beginning I elect the first ever master:
+     - I run some repmgr script that does the actual master election process
+     - I update the labels on the pod to include role: master;
+     - All other nodes I make sure have role: standby;
+ - When the master goes down, repmgrd will elect a new master (after 30 secs or so)
+ - I hook into the event `repmgrd_failover_promote` fired when a standby is
+   elected and alter the labels on this pod (using an env var that correlates
+   to the unique_id so I can "find myself") such that it is now `role:master`
+   after making sure that any current `role:master app:db` pods are deleted.
+ - I can perform similar hooking into other events such that pg nodes (pods)
+   ensure their own labels are accurate when any of the master/standby
+   register/unregister events occur.
